@@ -161,6 +161,13 @@ td.by{display:table-cell;font-size:11px}
 .toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translate(-50%,10px);opacity:0;transition:opacity .2s,transform .2s;background:var(--navy);color:var(--on-navy);padding:10px 16px;border-radius:10px;font-size:13px;max-width:min(560px,calc(100vw - 32px));box-shadow:0 8px 24px rgba(20,21,43,.25);z-index:20}
 .toast.show{opacity:1;transform:translate(-50%,0)}
 @media (max-width:640px){.thread{padding-left:14px}.task{grid-template-columns:24px 1fr 28px}}
+
+.gate form.login{display:grid;gap:6px;margin-top:16px;flex-wrap:nowrap}
+.login label{font-size:12px;font-weight:600;color:var(--fg-2);margin-top:6px}
+.login input{width:100%;padding:9px 10px}
+.login .btn{margin-top:12px;justify-self:start;padding:9px 22px}
+.pwform{display:flex;gap:8px;align-items:center;justify-content:flex-end;flex-wrap:wrap;width:100%;padding-bottom:8px}
+.pwform input{min-width:220px}
 </style>
 </head>
 <body>
@@ -168,11 +175,15 @@ td.by{display:table-cell;font-size:11px}
   <div class="gate">
     <div class="eyebrow">Neovara · Five Star</div>
     <h2>Sign in to the tracker</h2>
-    <p class="muted">Enter your @neovara.io email and we'll send you a sign-in link.</p>
-    <form id="loginform" autocomplete="on">
-      <input type="email" id="login-email" placeholder="you@neovara.io" aria-label="Work email" required>
-      <button class="btn" type="submit">Send link</button>
+    <p class="muted">Sign in with your @neovara.io email and the password you were given.</p>
+    <form id="loginform" class="login" autocomplete="on">
+      <label for="login-email">Work email</label>
+      <input type="email" id="login-email" name="email" placeholder="you@neovara.io" autocomplete="username" required>
+      <label for="login-password">Password</label>
+      <input type="password" id="login-password" name="password" autocomplete="current-password" required minlength="6">
+      <button class="btn" type="submit">Sign in</button>
     </form>
+    <p class="note muted">Forgot your password? Ask Vinz to reset it in Supabase.</p>
     <p class="note" id="gate-msg" role="status"></p>
   </div>
 </div>
@@ -184,7 +195,8 @@ td.by{display:table-cell;font-size:11px}
         <div class="eyebrow">Neovara marketing north star</div>
         <h1>Five Star tracker <span class="stars" aria-hidden="true">★★★★★</span></h1>
       </div>
-      <div class="userbar"><span class="sync" id="sync">Connecting…</span><span class="avatars" id="people" aria-label="Who is online"></span><span id="online" class="muted"></span><button class="ghost" id="signout" type="button">Sign out</button></div>
+      <div class="userbar"><span class="sync" id="sync">Connecting…</span><span class="avatars" id="people" aria-label="Who is online"></span><span id="online" class="muted"></span><button class="ghost" id="pwbtn" type="button" aria-expanded="false">Change password</button><button class="ghost" id="signout" type="button">Sign out</button></div>
+      <form id="pwform" class="pwform" hidden autocomplete="off"><input type="password" id="pw-new" autocomplete="new-password" placeholder="New password (8+ characters)" aria-label="New password" minlength="8" required><button class="btn" type="submit">Save</button><span class="note" id="pw-msg" role="status"></span></form>
     </div>
     <nav role="tablist" aria-label="Tracker sections">
       <button role="tab" id="tab-overview" aria-selected="true" data-tab="overview">Overview</button>
@@ -346,10 +358,31 @@ window.FIVE_STAR_CONFIG = {
   $('#loginform').addEventListener('submit', async ev => {
     ev.preventDefault();
     const email = $('#login-email').value.trim().toLowerCase();
+    const password = $('#login-password').value;
     if (!email.endsWith('@' + domain)) { $('#gate-msg').textContent = `Use your @${domain} email.`; return; }
-    $('#gate-msg').textContent = 'Sending…';
-    const { error } = await sb.auth.signInWithOtp({ email, options: { emailRedirectTo: location.origin + location.pathname } });
-    $('#gate-msg').textContent = error ? 'Could not send the link: ' + error.message : 'Check your inbox for a sign-in link.';
+    $('#gate-msg').textContent = 'Signing in…';
+    const { data, error } = await sb.auth.signInWithPassword({ email, password });
+    if (error) {
+      $('#gate-msg').textContent = /invalid/i.test(error.message) ? 'That email and password don\'t match. Check both and try again.' : 'Could not sign in: ' + error.message;
+      return;
+    }
+    $('#gate-msg').textContent = '';
+    if (data.session && !started) start(data.session);
+  });
+  $('#pwbtn').addEventListener('click', () => {
+    const f = $('#pwform'); f.hidden = !f.hidden;
+    $('#pwbtn').setAttribute('aria-expanded', String(!f.hidden));
+    if (!f.hidden) $('#pw-new').focus();
+  });
+  $('#pwform').addEventListener('submit', async ev => {
+    ev.preventDefault();
+    const pw = $('#pw-new').value;
+    if (pw.length < 8) { $('#pw-msg').textContent = 'Use at least 8 characters.'; return; }
+    $('#pw-msg').textContent = 'Saving…';
+    const { error } = await sb.auth.updateUser({ password: pw });
+    if (error) { $('#pw-msg').textContent = 'Could not change it: ' + error.message; return; }
+    $('#pw-new').value = ''; $('#pw-msg').textContent = 'Password changed.';
+    setTimeout(() => { $('#pwform').hidden = true; $('#pwbtn').setAttribute('aria-expanded', 'false'); $('#pw-msg').textContent = ''; }, 2500);
   });
   $('#signout').addEventListener('click', async () => { await sb.auth.signOut(); location.reload(); });
 
